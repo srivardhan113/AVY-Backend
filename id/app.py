@@ -4,10 +4,12 @@ from flask_bcrypt import Bcrypt
 from datetime import datetime, timedelta
 from twilio.rest import Client
 import random
+import requests
+from threading import Timer
 
 # Flask Application
 app = Flask(__name__)
-
+API_URL = "http://sripto.tech:8080/get_all_data"
 # Configuration
 app.config['SECRET_KEY'] = 'your_secret_key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:Nithin1234#@localhost/avy'
@@ -159,5 +161,79 @@ def track():
     session.pop('user_id', None)
     return render_template('track.html')
 
+
+
+def fetch_location_data():
+    try:
+  
+        response = requests.get(API_URL)
+        if response.status_code == 200:
+            data = response.json()
+            process_location_data(data)
+        else:
+            print(f"Error fetching data: {response.status_code}")
+    except Exception as e:
+        print(f"Error during API fetch: {e}")
+
+def process_location_data(data):
+    for record in data:
+        imei = record["IMEI"]
+        latitude = record["Latitude"]
+        longitude = record["Longitude"]
+        timestamp = datetime.strptime(record["Timestamp"], "%Y-%m-%d %H:%M:%S")
+
+        user = User.query.filter_by(imei=imei).first()
+        if not user:
+            
+            new_user = User(
+                imei=imei,
+                name=f"User-{imei[-4:]}",  
+                email=f"{imei}@placeholder.com",  
+                mobile="0000000000",  
+                password="password",  
+                address="Placeholder Address",
+                country="Placeholder Country",
+                state="Placeholder State",
+                city="Placeholder City",
+                pincode="000000"
+            )
+            db.session.add(new_user)
+            db.session.commit()
+
+            create_user_table(new_user.user_id)
+            
+            def create_user_table(user_id):
+                table_name = f"user_{user_id}_tracking"
+                create_table_query = f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    imei VARCHAR(255) NOT NULL,
+                    latitude FLOAT NOT NULL,
+                    longitude FLOAT NOT NULL,
+                    timestamp DATETIME NOT NULL
+                );
+                """
+                db.engine.execute(create_table_query)
+
+        table_name = f"user_{user.user_id}_tracking" if user else f"user_{new_user.user_id}_tracking"
+        insert_query = f"""
+        INSERT INTO {table_name} (imei, latitude, longitude, timestamp)
+        VALUES ('{imei}', {latitude}, {longitude}, '{timestamp}');
+        """
+        db.engine.execute(insert_query)
+
+def schedule_periodic_fetch(interval=20):  
+    fetch_location_data()
+    Timer(interval, schedule_periodic_fetch).start()
+
+@app.route("/fetch-locations", methods=["GET"])
+def fetch_locations():
+    try:
+        fetch_location_data()
+        return jsonify({"status": "success", "message": "Location data fetched and stored successfully."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+schedule_periodic_fetch()
 if __name__ == '__main__':
     app.run(debug=True)
