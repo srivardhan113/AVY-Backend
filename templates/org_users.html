@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Organization Users</title>
+</head>
+<body>
+    <h1>Organization Users and Devices</h1>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Device Name</th>
+                <th>IMEI</th>
+                <th>Status</th>
+                <th>Owner Name</th>
+                <th>Last Seen</th>
+                <th>Created At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for device, user, last_seen in devices %}
+            <tr>
+                <td>{{ device.device_name }}</td>
+                <td>{{ device.imei }}</td>
+                <td>{{ device.status }}</td>
+                <td>{{ user.name }}</td>
+                <td>{{ last_seen|default('Never', true) }}</td>
+                <td>{{ device.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <br>
+    <a href="{{ url_for('track') }}">Back to User Management</a>
+</body>
+</html> 

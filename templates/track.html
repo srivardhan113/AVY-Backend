@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Device Management</title>
+    <style>
+        .container { padding: 20px; }
+        .section { margin-bottom: 30px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; border: 1px solid #ddd; }
+        th { background-color: #f5f5f5; }
+        .form-group { margin-bottom: 15px; }
+        .btn { padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .btn:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Device Management</h1>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="section">
+            <h2>Add New Device</h2>
+            <form action="{{ url_for('add_device') }}" method="POST">
+                <div class="form-group">
+                    <label for="user_id">User ID:</label>
+                    <input type="text" id="user_id" name="user_id" required>
+                </div>
+                <div class="form-group">
+                    <label for="imei">IMEI Number:</label>
+                    <input type="text" id="imei" name="imei" required>
+                </div>
+                <div class="form-group">
+                    <label for="device_name">Device Name:</label>
+                    <input type="text" id="device_name" name="device_name" required>
+                </div>
+                <button type="submit" class="btn">Add Device</button>
+            </form>
+        </div>
+
+        <div class="section">
+            <h2>Current Devices</h2>
+            {% if devices %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Device Name</th>
+                            <th>IMEI</th>
+                            <th>Status</th>
+                            <th>User Name</th>
+                            <th>Created At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for device, device_user in devices %}
+                            <tr>
+                                <td>{{ device.device_name }}</td>
+                                <td>{{ device.imei }}</td>
+                                <td>{{ device.status }}</td>
+                                <td>{{ device_user.email }}</td>
+                                <td>{{ device.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No devices found.</p>
+            {% endif %}
+        </div>
+
+        <div class="section">
+            <h2>Update Location Data</h2>
+            <button onclick="updateLocations()">Fetch Latest Locations</button>
+        </div>
+
+        <script>
+        function updateLocations() {
+            fetch('/fetch-locations')
+                .then(response => response.json())
+                .then(data => {
+                    if(data.status === 'success') {
+                        alert('Location data updated successfully');
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('Error updating locations');
+                });
+        }
+        </script>
+    </div>
+</body>
+</html>

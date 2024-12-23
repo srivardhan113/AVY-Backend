@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tracking Results</title>
+</head>
+<body>
+    <h1>Tracking Results</h1>
+    {% if data %}
+        <table>
+            <tr>
+                <th>IMEI</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+                <th>Timestamp</th>
+            </tr>
+            {% for entry in data %}
+                <tr>
+                    <td>{{ entry.imei }}</td>
+                    <td>{{ entry.latitude }}</td>
+                    <td>{{ entry.longitude }}</td>
+                    <td>{{ entry.timestamp }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p>No tracking data found.</p>
+    {% endif %}
+</body>
+</html>
