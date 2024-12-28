@@ -10,6 +10,7 @@ import threading
 import time
 import atexit
 from flask_mail import Mail, Message
+from sqlalchemy import func
 
 # Flask Application
 app = Flask(__name__)
@@ -443,6 +444,161 @@ def send_otp_email(email, otp):
     except Exception as e:
         app.logger.error(f"Error sending email: {str(e)}")
         return False
+
+@app.route('/get_org_locations')
+def get_org_locations():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authorized'}), 401
+    
+    org_id = session['user_id']
+    timestamp = request.args.get('timestamp')
+    
+    try:
+        # If no timestamp provided, use current time
+        if not timestamp:
+            target_time = datetime.now(timezone.utc)
+        else:
+            target_time = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M')
+            
+        # Subquery to get the latest timestamp for each IMEI
+        latest_timestamps = db.session.query(
+            TrackingData.imei,
+            func.max(TrackingData.timestamp).label('max_timestamp')
+        ).group_by(TrackingData.imei).subquery()
+        
+        # Main query using the subquery
+        locations = db.session.query(
+            TrackingData,
+            Device.device_name,
+            User.name.label('user_name')
+        ).join(
+            latest_timestamps,
+            db.and_(
+                TrackingData.imei == latest_timestamps.c.imei,
+                TrackingData.timestamp == latest_timestamps.c.max_timestamp
+            )
+        ).join(
+            Device,
+            TrackingData.imei == Device.imei
+        ).join(
+            DeviceAccess,
+            Device.device_id == DeviceAccess.device_id
+        ).join(
+            User,
+            Device.owner_id == User.user_id
+        ).filter(
+            DeviceAccess.organization_id == org_id,
+            TrackingData.timestamp <= target_time
+        ).all()
+        
+        return jsonify([{
+            'latitude': float(loc.TrackingData.latitude),
+            'longitude': float(loc.TrackingData.longitude),
+            'imei': loc.TrackingData.imei,
+            'device_name': loc.device_name,
+            'user_name': loc.user_name,
+            'timestamp': loc.TrackingData.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        } for loc in locations])
+        
+    except Exception as e:
+        app.logger.error(f"Error in get_org_locations: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authorized'}), 401
+    
+    org_id = session['user_id']
+    timestamp = request.args.get('timestamp')
+    
+    try:
+        # If no timestamp provided, use current time
+        if not timestamp:
+            target_time = datetime.now(timezone.utc)
+        else:
+            target_time = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M')
+        
+        # Get locations for all devices accessible to the organization
+        locations = db.session.query(
+            TrackingData,
+            Device.device_name,
+            User.name.label('user_name')
+        ).join(
+            Device, TrackingData.imei == Device.imei
+        ).join(
+            DeviceAccess, Device.device_id == DeviceAccess.device_id
+        ).join(
+            User, Device.owner_id == User.user_id
+        ).filter(
+            DeviceAccess.organization_id == org_id,
+            TrackingData.timestamp <= target_time
+        ).distinct(
+            Device.imei
+        ).order_by(
+            Device.imei,
+            TrackingData.timestamp.desc()
+        ).all()
+        
+        return jsonify([{
+            'latitude': float(loc.TrackingData.latitude),
+            'longitude': float(loc.TrackingData.longitude),
+            'imei': loc.TrackingData.imei,
+            'device_name': loc.device_name,
+            'user_name': loc.user_name,
+            'timestamp': loc.TrackingData.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        } for loc in locations])
+        
+    except Exception as e:
+        app.logger.error(f"Error in get_org_locations: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/org_map')
+def org_map():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    user = User.query.get(session['user_id'])
+    if not user or user.user_type != 'organization':
+        flash('Access denied')
+        return redirect(url_for('dashboard'))
+        
+    return render_template('maps.html')
+
+@app.route('/map/<imei>')
+def show_map(imei):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    return render_template('maps.html', imei=imei)
+
+@app.route('/get_device_location/<imei>')
+def get_device_location(imei):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authorized'}), 401
+    
+    # Get the latest location for the device
+    latest_location = db.session.query(
+        TrackingData,
+        Device.device_name,
+        User.name.label('user_name')
+    ).join(
+        Device, TrackingData.imei == Device.imei
+    ).join(
+        User, Device.owner_id == User.user_id
+    ).filter(
+        TrackingData.imei == imei
+    ).order_by(
+        TrackingData.timestamp.desc()
+    ).first()
+    
+    if latest_location:
+        return jsonify({
+            'latitude': float(latest_location.TrackingData.latitude),
+            'longitude': float(latest_location.TrackingData.longitude),
+            'device_name': latest_location.device_name,
+            'user_name': latest_location.user_name,
+            'timestamp': latest_location.TrackingData.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    
+    return jsonify({'error': 'Location not found'}), 404
 
 if __name__ == '__main__':
     # Start background fetch thread
