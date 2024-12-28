@@ -11,6 +11,23 @@
         .form-group { margin-bottom: 15px; }
         .btn { padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
         .btn:hover { background-color: #0056b3; }
+        .nav-buttons {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            color: white;
+        }
+        .btn-primary {
+            background-color: #007bff;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -77,6 +94,11 @@
         <div class="section">
             <h2>Update Location Data</h2>
             <button onclick="updateLocations()">Fetch Latest Locations</button>
+        </div>
+
+        <div class="nav-buttons">
+            <a href="{{ url_for('org_map') }}" class="btn btn-primary">View Live Map</a>
+            <a href="{{ url_for('view_org_users') }}" class="btn btn-secondary">View Users</a>
         </div>
 
         <script>
