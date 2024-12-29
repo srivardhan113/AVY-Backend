@@ -17,7 +17,8 @@ app = Flask(__name__)
 API_URL = "http://sripto.tech:8080/get_all_data"
 # Configuration
 app.config['SECRET_KEY'] = 'your_secret_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:Nithin1234#@localhost/avy'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:Nithin1234#@localhost/avy'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:sql123@34.56.147.135:3306/avy'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -224,7 +225,52 @@ def login():
         return render_template('login.html', error='Invalid credentials')
 
     return render_template('login.html')
-
+@app.route('/change_password', methods=['GET', 'POST'])
+def change_password():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        user = User.query.get(session['user_id'])
+        
+        if not user:
+            flash('User not found.', 'error')
+            return redirect(url_for('dashboard'))
+            
+        # Verify current password
+        if not bcrypt.check_password_hash(user.password, current_password):
+            flash('Current password is incorrect.', 'error')
+            return render_template('change_password.html')
+            
+        # Check if new password matches confirmation
+        if new_password != confirm_password:
+            flash('New passwords do not match.', 'error')
+            return render_template('change_password.html')
+            
+        # Check password length (you can add more validation as needed)
+        if len(new_password) < 8:
+            flash('New password must be at least 8 characters long.', 'error')
+            return render_template('change_password.html')
+            
+        try:
+            # Hash the new password and update
+            hashed_password = bcrypt.generate_password_hash(new_password)
+            user.password = hashed_password
+            db.session.commit()
+            
+            flash('Password successfully changed!', 'success')
+            return redirect(url_for('dashboard'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred while changing password.', 'error')
+            return render_template('change_password.html')
+    
+    return render_template('change_password.html')
 # Dashboard
 @app.route('/dashboard')
 def dashboard():
