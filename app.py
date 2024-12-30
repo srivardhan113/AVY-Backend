@@ -7,6 +7,7 @@ import random
 import requests
 from threading import Timer
 import threading
+from pytz import timezone
 import time
 import atexit
 from flask_mail import Mail, Message
@@ -17,8 +18,8 @@ app = Flask(__name__)
 API_URL = "http://sripto.tech:8080/get_all_data"
 # Configuration
 app.config['SECRET_KEY'] = 'your_secret_key'
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:Nithin1234#@localhost/avy'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:sql123@34.56.147.135:3306/avy'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:Nithin1234#@localhost/avy'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:sql123@34.56.147.135:3306/avy'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -107,7 +108,7 @@ def signup():
         name = request.form['name']
         email = request.form['email']
         mobile = request.form['mobile']
-        password = bcrypt.generate_password_hash(request.form['password'])
+        password = bcrypt.generate_password_hash(request.form['password']).decode('utf-8')
         address = request.form['address']
         country = request.form['country']
         state = request.form['state']
@@ -139,74 +140,71 @@ def signup():
             organization_name=organization_name if user_type == 'organization' else None
         )
         db.session.add(new_user)
-        db.session.flush()  # This gets the user_id
+        db.session.flush()  # Flush ensures `new_user.user_id` is available
 
-        # If it's an organization, set its own user_id as organization_id
-        if user_type == 'organization':
-            new_user.organization_id = new_user.user_id
-            
         # Generate and store OTP with timezone-aware datetime
         otp = generate_otp()
-        expiry_time = datetime.now(timezone.utc) + timedelta(minutes=10)
-        print(1)
+        expiry_time = datetime.now() + timedelta(minutes=10)
         new_otp = OTP(
             user_id=new_user.user_id,
             otp_code=otp,
             expiry_time=expiry_time
         )
         db.session.add(new_otp)
-        print(1)
-        
+
         try:
             db.session.commit()
-            print(1)
             # Send OTP via email
             if send_otp_email(email, otp):
-                print(1)
+                flash('OTP sent to your email. Please verify.', 'info')
                 return redirect(url_for('verify_otp', email=email))
             else:
                 db.session.rollback()
-                print(1)
                 flash('Error sending OTP. Please try again.', 'error')
                 return render_template('signup.html')
         except Exception as e:
-            print(1)
             db.session.rollback()
             flash('Error during signup. Please try again.', 'error')
             return render_template('signup.html')
 
     return render_template('signup.html')
 
+
 # OTP Verification Page
 @app.route('/verify-otp', methods=['GET', 'POST'])
 def verify_otp():
     email = request.args.get('email')
     if not email:
+        flash('Email is missing. Please sign up again.', 'error')
+        return redirect(url_for('signup'))
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        flash('User not found. Please sign up again.', 'error')
         return redirect(url_for('signup'))
 
     if request.method == 'POST':
-        otp_code = request.form.get('otp')
-        user = User.query.filter_by(email=email).first()
-        
-        if not user:
-            flash('User not found', 'error')
-            return redirect(url_for('signup'))
-
+        otp_code = request.form.get('otp_code')
         otp_record = OTP.query.filter_by(
             user_id=user.user_id,
             otp_code=otp_code
         ).first()
 
-        if otp_record and otp_record.expiry_time > datetime.now(timezone.utc):
-            # OTP is valid, delete it and redirect to login
-            db.session.delete(otp_record)
-            db.session.commit()
-            flash('Email verified successfully! Please login.', 'success')
-            return redirect(url_for('login'))
+        if otp_record and otp_record.expiry_time > datetime.now():
+            # OTP is valid
+            try:
+                db.session.delete(otp_record)
+                db.session.commit()
+                flash('Email verified successfully! Please log in.', 'success')
+                return redirect(url_for('login'))
+            except Exception as e:
+                db.session.rollback()
+                flash('Error during OTP verification. Please try again.', 'error')
         else:
-            flash('Invalid or expired OTP', 'error')
+            flash('Invalid or expired OTP.', 'error')
 
     return render_template('verify_otp.html', email=email)
+
 
 # Login Page
 @app.route('/login', methods=['GET', 'POST'])
@@ -297,9 +295,9 @@ def track():
         return redirect(url_for('login'))
     
     user = User.query.filter_by(user_id=session['user_id']).first()
-    if not user or user.user_type != 'organization':
-        flash('Only organizations can access tracking')
-        return redirect(url_for('dashboard'))
+    # if not user or user.user_type != 'organization':
+    #     flash('Only organizations can access tracking')
+    #     return redirect(url_for('dashboard'))
     
     # Get devices and their associated users
     devices_with_users = db.session.query(Device, User).join(
@@ -398,26 +396,55 @@ def add_device():
         return redirect(url_for('login'))
     
     try:
-        user_id = request.form.get('user_id')
+        user_id = request.form.get['user_id']
+        email = request.form.get['email']  # Get the email of the logged-in user
         imei = request.form.get('imei')
         device_name = request.form.get('device_name')
-        
-        # Verify organization status
-        org = User.query.filter_by(user_id=session['user_id']).first()
-        if not org or org.user_type != 'organization':
-            flash('Invalid organization access')
-            return redirect(url_for('track'))
+        authorized_email = "nithinjambula89@gmail.com"
+        print("Authorized Email: ", authorized_email)
+        # Check if the email is authorized to add new devices
+        if email != authorized_email:
+            # If not authorized, check if the IMEI exists and grant access
+            existing_device = Device.query.filter_by(imei=imei).first()
+            print("Existing Device: ", existing_device)
+            if existing_device:
+                # Check if access is already granted
+                existing_access = DeviceAccess.query.filter_by(
+                    device_id=existing_device.device_id,
+                    organization_id=user_id
+                ).first()
+                if existing_access:
+                    flash('Access already granted to this user for this device.')
+                    return redirect(url_for('track'))
+                print("Existing Access: ", existing_access)
 
-        # Verify user exists
-        user = User.query.filter_by(user_id=user_id).first()
-        if not user:
-            flash('Invalid user ID')
-            return redirect(url_for('track'))
+                # Grant access to the existing device
+                device_access = DeviceAccess(
+                    device_id=existing_device.device_id,
+                    organization_id=user_id
+                )
+                print("Device Access: ", device_access)
+                db.session.add(device_access)
+                db.session.commit()
+                flash('Access successfully granted to the device.')
+                return redirect(url_for('track'))
+            else:
+                # If the IMEI does not exist, unauthorized email cannot add new devices
+                flash('Unauthorized email. Only the authorized user can add new devices.')
+                return redirect(url_for('track'))
+
+        # Verify organization status
+        # org = User.query.filter_by(user_id=session['user_id']).first()
+        # if not org or org.user_type != 'organization':
+        #     flash('Invalid organization access.')
+        #     return redirect(url_for('track'))
 
         # Check if IMEI already exists
         if Device.query.filter_by(imei=imei).first():
-            flash('Device with this IMEI already exists')
+            flash('Device with this IMEI already exists.')
             return redirect(url_for('track'))
+        print("IMEI: ", imei)
+
 
         # Create new device
         new_device = Device(
@@ -430,14 +457,15 @@ def add_device():
         db.session.flush()
 
         # Create device access for organization
-        device_access = DeviceAccess(
+        device_access_org = DeviceAccess(
             device_id=new_device.device_id,
             organization_id=session['user_id']
         )
-        db.session.add(device_access)
+        db.session.add(device_access_org)
+
         db.session.commit()
 
-        flash('Device successfully added')
+        flash('Device successfully added.')
         
     except Exception as e:
         db.session.rollback()
@@ -445,34 +473,21 @@ def add_device():
     
     return redirect(url_for('track'))
 
+# Add a new template for viewing organization users
 @app.route('/view_org_users')
 def view_org_users():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    org_id = session['user_id']
+    user = User.query.get(session['user_id'])
+    if not user or user.user_type != 'organization':
+        flash('Access denied')
+        return redirect(url_for('dashboard'))
     
-    # Get all devices accessible to the organization with their latest tracking data
-    devices = db.session.query(
-        Device,
-        User,
-        db.func.max(TrackingData.timestamp).label('last_seen')
-    ).join(
-        DeviceAccess, Device.device_id == DeviceAccess.device_id
-    ).join(
-        User, Device.owner_id == User.user_id
-    ).outerjoin(
-        TrackingData, Device.imei == TrackingData.imei
-    ).filter(
-        DeviceAccess.organization_id == org_id
-    ).group_by(
-        Device.device_id,
-        User.user_id
-    ).all()
+    # Fetch users associated with the organization
+    users = User.query.filter_by(organization_name=user.organization_name).all()
     
-    return render_template('org_users.html', devices=devices)
-
-# Add a new template for viewing organization users
+    return render_template('org_users.html', users=users)
 
 def generate_otp():
     return ''.join([str(random.randint(0, 9)) for _ in range(6)])
