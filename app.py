@@ -392,12 +392,12 @@ def track_imei():
 
 @app.route('/add_device', methods=['POST'])
 def add_device():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+    # if 'user_id' not in session:
+    #     return redirect(url_for('login'))
     
     try:
-        user_id = request.form.get['user_id']
-        email = request.form.get['email']  # Get the email of the logged-in user
+        user_id = request.form.get('user_id')
+        email = request.form.get('email')  # Get the email of the logged-in user
         imei = request.form.get('imei')
         device_name = request.form.get('device_name')
         authorized_email = "nithinjambula89@gmail.com"
