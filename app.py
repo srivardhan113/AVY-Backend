@@ -12,14 +12,17 @@ import time
 import atexit
 from flask_mail import Mail, Message
 from sqlalchemy import func
-
+from flask_cors import CORS
 # Flask Application
 app = Flask(__name__)
+# Enable CORS
+CORS(app)
+
 API_URL = "http://sripto.tech:8080/get_all_data"
 # Configuration
 app.config['SECRET_KEY'] = 'your_secret_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:Nithin1234#@localhost/avy'
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:sql123@34.56.147.135:3306/avy'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:Nithin1234#@localhost/avy'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:sql123@34.56.147.135:3306/avy'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -33,10 +36,10 @@ db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 
 # Twilio Config
-TWILIO_ACCOUNT_SID = 'ACbf3a84933c8187f5933baec382de3945'
-TWILIO_AUTH_TOKEN = '79bd543b69a4166a2d64634e21e58d57'
-TWILIO_PHONE_NUMBER = '+919347632259'
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+# TWILIO_ACCOUNT_SID = 'ACbf3a84933c8187f5933baec382de3945'
+# TWILIO_AUTH_TOKEN = '79bd543b69a4166a2d64634e21e58d57'
+# TWILIO_PHONE_NUMBER = '+919347632259'
+# twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # Global flag for thread control
 fetch_thread_running = True
@@ -373,14 +376,24 @@ def fetch_locations():
         "message": "Locations updated" if success else "Failed to update"
     })
 
-@app.route('/track_imei', methods=['POST'])
+@app.route('/track_imei', methods=['GET', 'POST'])
 def track_imei():
-    identifier = request.form['identifier']
+    
+    identifier =  request.form.get('identifier')
+    print("Identifier: ", identifier)
+    if not identifier:
+        return render_template('track.html', error="Identifier is missing.")
 
     # Check if identifier is a user or organization ID
+    if identifier.isdigit():
+        user = User.query.filter_by(user_id=identifier).first()
+        organization = User.query.filter_by(user_id=identifier, user_type='organization').first()
+    else:
+        user = User.query.filter_by(email=identifier).first()
+        organization = User.query.filter_by(email=identifier, user_type='organization').first()
     user = User.query.filter_by(user_id=identifier).first()
-    organization = User.query.filter_by(user_id=identifier, is_organisation=True).first()
-
+    organization = User.query.filter_by(user_id=identifier).first()
+    print("User: ", user)
     if user:
         data = TrackingData.query.filter_by(user_id=identifier).all()
     elif organization:
@@ -479,15 +492,28 @@ def view_org_users():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    user = User.query.get(session['user_id'])
-    if not user or user.user_type != 'organization':
-        flash('Access denied')
-        return redirect(url_for('dashboard'))
+    org_id = session['user_id']
     
-    # Fetch users associated with the organization
-    users = User.query.filter_by(organization_name=user.organization_name).all()
+    # Get all devices accessible to the organization with their latest tracking data
+    devices = db.session.query(
+        Device,
+        User,
+        db.func.max(TrackingData.timestamp).label('last_seen')
+    ).join(
+        DeviceAccess, Device.device_id == DeviceAccess.device_id
+    ).join(
+        User, Device.owner_id == User.user_id
+    ).outerjoin(
+        TrackingData, Device.imei == TrackingData.imei
+    ).filter(
+        DeviceAccess.organization_id == org_id
+    ).group_by(
+        Device.device_id,
+        User.user_id
+    ).all()
     
-    return render_template('org_users.html', users=users)
+    return render_template('org_users.html', devices=devices)
+
 
 def generate_otp():
     return ''.join([str(random.randint(0, 9)) for _ in range(6)])
@@ -564,53 +590,7 @@ def get_org_locations():
     except Exception as e:
         app.logger.error(f"Error in get_org_locations: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authorized'}), 401
     
-    org_id = session['user_id']
-    timestamp = request.args.get('timestamp')
-    
-    try:
-        # If no timestamp provided, use current time
-        if not timestamp:
-            target_time = datetime.now(timezone.utc)
-        else:
-            target_time = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M')
-        
-        # Get locations for all devices accessible to the organization
-        locations = db.session.query(
-            TrackingData,
-            Device.device_name,
-            User.name.label('user_name')
-        ).join(
-            Device, TrackingData.imei == Device.imei
-        ).join(
-            DeviceAccess, Device.device_id == DeviceAccess.device_id
-        ).join(
-            User, Device.owner_id == User.user_id
-        ).filter(
-            DeviceAccess.organization_id == org_id,
-            TrackingData.timestamp <= target_time
-        ).distinct(
-            Device.imei
-        ).order_by(
-            Device.imei,
-            TrackingData.timestamp.desc()
-        ).all()
-        
-        return jsonify([{
-            'latitude': float(loc.TrackingData.latitude),
-            'longitude': float(loc.TrackingData.longitude),
-            'imei': loc.TrackingData.imei,
-            'device_name': loc.device_name,
-            'user_name': loc.user_name,
-            'timestamp': loc.TrackingData.timestamp.strftime('%Y-%m-%d %H:%M:%S')
-        } for loc in locations])
-        
-    except Exception as e:
-        app.logger.error(f"Error in get_org_locations: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/org_map')
 def org_map():
     if 'user_id' not in session:
