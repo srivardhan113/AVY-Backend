@@ -234,5 +234,34 @@
         // Auto refresh every 30 seconds
         setInterval(updateMap, 30000);
     </script>
+    <script>
+        let deviceMarkers = {};
+        
+        function updateDeviceLocations() {
+            fetch('/get_org_locations')
+                .then(response => response.json())
+                .then(devices => {
+                    devices.forEach(device => {
+                        const position = {
+                            lat: device.latitude,
+                            lng: device.longitude
+                        };
+                        
+                        if (!deviceMarkers[device.imei]) {
+                            deviceMarkers[device.imei] = new google.maps.Marker({
+                                position: position,
+                                map: map,
+                                title: `${device.device_name} (${device.user_name})`
+                            });
+                        } else {
+                            deviceMarkers[device.imei].setPosition(position);
+                        }
+                    });
+                });
+        }
+        
+        // Update every 30 seconds
+        setInterval(updateDeviceLocations, 30000);
+        </script>
 </body>
 </html>

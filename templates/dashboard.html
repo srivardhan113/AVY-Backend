@@ -84,6 +84,7 @@
                 <p><strong>Email:</strong> {{ user.email }}</p>
                 <p><strong>Mobile:</strong> {{ user.mobile }}</p>
                 <p><strong>User Type:</strong> {{ user.user_type.title() }}</p>
+                <p><strong>User ID:</strong> {{ user.user_id }}</p> <!-- Added User ID -->
             </div>
 
             <div class="info-card">
@@ -120,6 +121,7 @@
         {% if user.user_type == 'individual' %}
         <div class="nav-buttons">
             <a href="{{ url_for('track') }}" class="btn btn-primary">View My Devices</a>
+            <a href="{{ url_for('org_map') }}" class="btn btn-primary">Live Map</a>
         </div>
         {% endif %}
     </div>
